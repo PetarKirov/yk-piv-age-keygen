@@ -157,6 +157,14 @@ def slotnum(slot: int) -> int:
     return slot - YUBIKEY_SLOT.RETIRED1 + 1
 
 
+def format_sw(sw: int) -> str:
+    """Format an APDU status word by name, or as hex if it is unknown."""
+    try:
+        return YUBIKEY_STATUS_WORD(sw).name
+    except ValueError:
+        return f"0x{sw:04X}"
+
+
 class KeygenError(Exception):
     """Base exception raised in most cases."""
 
@@ -411,7 +419,7 @@ class Keygen:
                     slotnum(self.slot),
                 )
             else:
-                msg = f"Failed reading key in PIV slot {self.slot:X}: {e.sw}"
+                msg = f"Failed reading key in PIV slot {self.slot:X}: {format_sw(e.sw)}"
                 raise KeygenError(msg) from e
 
         crt: x509.Certificate | None = None
@@ -425,7 +433,10 @@ class Keygen:
                     slotnum(self.slot),
                 )
             else:
-                msg = f"Failed reading certificate in PIV slot {self.slot:X}: {e.sw}"
+                msg = (
+                    f"Failed reading certificate in PIV slot {self.slot:X}:"
+                    f" {format_sw(e.sw)}"
+                )
                 raise KeygenError(msg) from e
 
         if not has_key and crt is None:
@@ -673,7 +684,7 @@ class Keygen:
         except YubiKeyInvalidPinError as e:
             raise KeygenError(e) from e
         except YubiKeyApduError as e:
-            msg = f"APDU: {YUBIKEY_STATUS_WORD(e.sw).name}"
+            msg = f"APDU: {format_sw(e.sw)}"
             raise KeygenError(msg) from e
 
 
