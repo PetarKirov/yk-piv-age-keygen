@@ -327,12 +327,14 @@ version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
+    { name = "pyscard" },
     { name = "yubikey-manager" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=49.0.0" },
+    { name = "pyscard", specifier = ">=2.3.1,<3" },
     { name = "yubikey-manager", specifier = ">=5.9.2,<5.10" },
 ]
 

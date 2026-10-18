@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 import click
 from cryptography import x509
 from cryptography.x509.oid import NameOID, ObjectIdentifier
+from smartcard.ExclusiveConnectCardConnection import ExclusiveConnectCardConnection
 from ykman._cli.piv import _update_chuid as yk_update_chuid
 from ykman._cli.util import prompt_timeout as yk_prompt_timeout
 from ykman.device import _UsbCompositeDevice as YubiKeyUsbCompositeDevice
@@ -573,10 +574,27 @@ class Keygen:
             raise KeygenError(msg)
 
         try:
-            self.session = YubiKeyPivSession(self.device.smart_card())
+            connection = self.device.smart_card()
         except ValueError as e:
             msg = f"Failed establishing PIV session (pcscd not running?): {e}"
             raise KeygenError(msg) from e
+
+        # ykman silently falls back to a shared connection if exclusive access
+        # fails. Other processes could then modify the slot between checking
+        # it and generating the key, so require exclusive access.
+        if not isinstance(
+            getattr(connection, "connection", None),
+            ExclusiveConnectCardConnection,
+        ):
+            connection.close()
+            msg = (
+                "Failed to get exclusive access to the YubiKey, close other"
+                " applications using it (e.g. scdaemon/gpg-agent, yubikey-agent,"
+                " age-plugin-yubikey) and try again."
+            )
+            raise KeygenError(msg)
+
+        self.session = YubiKeyPivSession(connection)
 
     def main(self) -> None:
         """Execute the main workflow."""
