@@ -580,12 +580,28 @@ class Keygen:
             self.slot,
             slotnum(self.slot),
         )
-        self.pubkey = self.session.generate_key(
-            self.slot,
-            self.key_type,
-            self.pin_policy,
-            self.touch_policy,
-        )
+        try:
+            self.pubkey = self.session.generate_key(
+                self.slot,
+                self.key_type,
+                self.pin_policy,
+                self.touch_policy,
+            )
+        except YubiKeyApduError:
+            # Rejected by the YubiKey, so nothing was written to the slot.
+            raise
+        except BaseException:
+            # The YubiKey may have committed the new key before the response
+            # was lost, so the slot state is unknown and can't be cleaned up.
+            self.log.error(
+                "Key generation in PIV slot %X (RETIRED%d) was interrupted, the"
+                " slot may now contain a new key next to a missing or stale"
+                " certificate. Check it with 'ykman piv info' and run again with"
+                " --force to replace it.",
+                self.slot,
+                slotnum(self.slot),
+            )
+            raise
 
     def get_session(self) -> None:
         """Open a PIV session against the selected YubiKey smartcard interface."""
