@@ -60,8 +60,8 @@ should this.
 
 ```
 $ yk-piv-age-keygen --help
-usage: yk-piv-age-keygen [-h] [-v] [-q] [-S <num>] -s {1..20} [-p <pin>]
-                         [-m <key>] [-P {never,once,always}]
+usage: yk-piv-age-keygen [-h] [-v] [-q] [-S <num>] -s {1..20} [--pin-stdin]
+                         [--mgmt-key-stdin] [-P {never,once,always}]
                          [-T {never,always,cached}] [--force]
 
 options:
@@ -71,15 +71,25 @@ options:
   -S, --serial <num>    use the YubiKey with this serial (required with
                         multiple devices)
   -s, --slot {1..20}    generate a key and certificate in this retired slot
-  -p, --pin <pin>       PIN code (requested interactively if not specified)
-  -m, --mgmt-key <key>  management key (required if key is not PIN
-                        derived/protected)
+  --pin-stdin           read the PIN from the first line of stdin (requested
+                        interactively if not specified)
+  --mgmt-key-stdin      read the management key from the next line of stdin
+                        (requested interactively if needed and not specified)
   -P, --pin-policy {never,once,always}
                         new PIN policy for slot (default: once)
   -T, --touch-policy {never,always,cached}
                         new touch policy for slot (default: always)
   --force               force replacement of currently existing
                         key/certificate in slot
+```
+
+Secrets are never accepted as arguments, since those are visible to other
+users via `ps` and end up in shell history. For non-interactive use, pipe them
+in instead, e.g. from a password manager:
+```
+$ pass show yubikey/piv-pin | yk-piv-age-keygen -s 20 --pin-stdin
+$ { pass show yubikey/piv-pin; pass show yubikey/piv-mgmt-key; } \
+    | yk-piv-age-keygen -s 20 --pin-stdin --mgmt-key-stdin
 ```
 
 ## Example

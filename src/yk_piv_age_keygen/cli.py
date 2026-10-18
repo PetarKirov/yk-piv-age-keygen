@@ -77,16 +77,18 @@ def arg_parse() -> argparse.Namespace:
         metavar="{1..20}",
     )
     parser.add_argument(
-        "-p",
-        "--pin",
-        help="PIN code (requested interactively if not specified)",
-        metavar="<pin>",
+        "--pin-stdin",
+        action="store_true",
+        default=False,
+        help="read the PIN from the first line of stdin"
+        " (requested interactively if not specified)",
     )
     parser.add_argument(
-        "-m",
-        "--mgmt-key",
-        help="management key (required if key is not PIN derived/protected)",
-        metavar="<key>",
+        "--mgmt-key-stdin",
+        action="store_true",
+        default=False,
+        help="read the management key from the next line of stdin"
+        " (requested interactively if needed and not specified)",
     )
     parser.add_argument(
         "-P",
@@ -539,6 +541,27 @@ class Keygen:
             raise KeygenError(msg) from e
 
 
+def read_stdin_secrets(
+    *,
+    pin: bool,
+    mgmt_key: bool,
+) -> tuple[str | None, str | None]:
+    """Read the requested secrets from stdin, one per line (PIN first)."""
+    if not (pin or mgmt_key):
+        return None, None
+
+    if sys.stdin.isatty():
+        msg = (
+            "Refusing to read secrets from a terminal (input would be echoed),"
+            " omit --pin-stdin/--mgmt-key-stdin to be prompted instead."
+        )
+        raise KeygenError(msg)
+
+    pin_value = sys.stdin.readline().rstrip("\r\n") if pin else None
+    mgmt_key_value = sys.stdin.readline().rstrip("\r\n") if mgmt_key else None
+    return pin_value, mgmt_key_value
+
+
 def main() -> None:
     """CLI entrypoint."""
     opts = arg_parse()
@@ -554,11 +577,15 @@ def main() -> None:
     logger = logging.getLogger(__name__)
 
     try:
+        pin, mgmt_key = read_stdin_secrets(
+            pin=opts.pin_stdin,
+            mgmt_key=opts.mgmt_key_stdin,
+        )
         Keygen(
             opts.serial,
             opts.slot,
-            opts.pin,
-            opts.mgmt_key,
+            pin,
+            mgmt_key,
             opts.pin_policy,
             opts.touch_policy,
             opts.force,
