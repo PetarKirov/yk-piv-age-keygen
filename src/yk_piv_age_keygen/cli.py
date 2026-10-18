@@ -44,6 +44,8 @@ from yubikit.support import get_name as yk_get_name
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 
+YUBIKEY_DEFAULT_PIN = "123456"
+
 
 def arg_parse() -> argparse.Namespace:
     """Parse CLI arguments."""
@@ -309,7 +311,8 @@ class Keygen:
 
         if not self.pin:
             self.pin = click.prompt(
-                f"Enter PIN for YubiKey with serial '{self.serial}' (default: 123456)",
+                f"Enter PIN for YubiKey with serial '{self.serial}'"
+                f" (default: {YUBIKEY_DEFAULT_PIN})",
                 hide_input=True,
             )
         self.session.verify_pin(self.pin)
@@ -351,6 +354,21 @@ class Keygen:
         # PIN verification should apparently be done after authentication as well...?
         self.session.verify_pin(self.pin)
         self.authenticated = True
+
+        self.warn_default_credentials()
+
+    def warn_default_credentials(self) -> None:
+        """Warn if the PIN or management key still has its factory default value."""
+        if self.pin == YUBIKEY_DEFAULT_PIN:
+            self.log.warning(
+                "PIN is set to the default value,"
+                " change it using 'ykman piv access change-pin'.",
+            )
+        if self.mgmt_key == YUBIKEY_DEFAULT_MANAGEMENT_KEY:
+            self.log.warning(
+                "Management key is set to the default value, change it using"
+                " 'ykman piv access change-management-key --generate --protect'.",
+            )
 
     def check_slot_empty(self) -> None:
         """Ensure the slot does not contain a certificate already (unless forced)."""
