@@ -229,7 +229,7 @@ class Keygen:
             try:
                 self.mgmt_key = bytes.fromhex(mgmt_key)
             except ValueError as e:
-                msg = f"Management key {mgmt_key!r} is not a valid hex string."
+                msg = "Management key is not a valid hex string."
                 raise KeygenError(msg) from e
 
         self.serial: int | None = None
