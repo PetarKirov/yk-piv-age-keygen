@@ -2,8 +2,10 @@ version = 1
 
 [[annotations]]
 path = [
+    ".envrc",
     ".gitignore",
     ".python-version",
+    "flake.lock",
     "pyproject.toml",
     "uv.lock",
 ]

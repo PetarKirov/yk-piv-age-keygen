@@ -46,6 +46,13 @@ If you're not on Debian 13, use [uv](https://github.com/astral-sh/uv) and run
 `uv run yk-piv-age-keygen --help` (in the repo root), which should generate a
 venv for you with a fully working set of dependencies to execute the command.
 
+With [Nix](https://nixos.org) (flakes enabled), `nix develop` provides a dev
+shell with `yk-piv-age-keygen` (editable), `uv`, `ruff` and `reuse`. The
+toolchain is pinned by `flake.lock` and every Python dependency is built by Nix
+from the versions and hashes pinned in `uv.lock` (via
+[uv2nix](https://github.com/pyproject-nix/uv2nix)). After changing
+dependencies, run `uv lock` inside the shell and re-enter it.
+
 Just make sure that pcscd.service is running. If `ykman piv info` works, so
 should this.
 

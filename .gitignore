@@ -6,3 +6,5 @@ wheels/
 *.egg-info
 *.py[oc]
 __pycache__/
+.direnv
+.env
