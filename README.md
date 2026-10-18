@@ -92,6 +92,10 @@ $ { pass show yubikey/piv-pin; pass show yubikey/piv-mgmt-key; } \
     | yk-piv-age-keygen -s 20 --pin-stdin --mgmt-key-stdin
 ```
 
+If generating the certificate fails (e.g. the touch prompt times out), the new
+key and any stale certificate are deleted from the slot again (deleting keys
+requires YubiKey 5.7+).
+
 ## Example
 
 Generate a new key+certificate in the reserved slot #20:

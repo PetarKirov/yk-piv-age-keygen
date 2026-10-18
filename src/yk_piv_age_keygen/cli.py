@@ -31,6 +31,7 @@ from ykman.piv import get_pivman_protected_data as yk_get_pivman_protected_data
 from ykman.piv import sign_certificate_builder as yk_sign_certificate_builder
 from ykman.scripting import ScriptingDevice as YubiKeyScriptingDevice
 from yubikit.core import InvalidPinError as YubiKeyInvalidPinError
+from yubikit.core import NotSupportedError as YubiKeyNotSupportedError
 from yubikit.core.smartcard import SW as YUBIKEY_STATUS_WORD
 from yubikit.core.smartcard import ApduError as YubiKeyApduError
 from yubikit.management import DeviceInfo as YubiKeyDeviceInfo
@@ -489,7 +490,41 @@ class Keygen:
             )
 
         self.session.put_certificate(self.slot, self.crt)
-        yk_update_chuid(self.session)
+
+    def delete_key(self) -> None:
+        """Remove the generated key and any (stale) certificate from the slot."""
+        self.log.error(
+            "Certificate generation failed, cleaning up PIV slot %X (RETIRED%d) ...",
+            self.slot,
+            slotnum(self.slot),
+        )
+
+        try:
+            self.session.delete_certificate(self.slot)
+        except Exception as e:  # noqa: BLE001 # Do not catch blind exception
+            self.log.error(
+                "Failed deleting certificate in PIV slot %X: %s",
+                self.slot,
+                e,
+            )
+
+        try:
+            self.session.delete_key(self.slot)
+        except YubiKeyNotSupportedError:
+            self.log.error(
+                "Deleting keys is not supported by this YubiKey (requires 5.7+),"
+                " PIV slot %X (RETIRED%d) contains a key without a certificate.",
+                self.slot,
+                slotnum(self.slot),
+            )
+        except Exception as e:  # noqa: BLE001 # Do not catch blind exception
+            self.log.error("Failed deleting key in PIV slot %X: %s", self.slot, e)
+        else:
+            self.log.info(
+                "PIV slot %X (RETIRED%d) is now empty.",
+                self.slot,
+                slotnum(self.slot),
+            )
 
     def generate_key(self) -> None:
         """Create a new key in the selected PIV slot."""
@@ -533,7 +568,13 @@ class Keygen:
             self.check_slot_empty()
             self.authenticate_piv()
             self.generate_key()
-            self.generate_certificate()
+            try:
+                self.generate_certificate()
+            except BaseException:
+                # Don't leave a new key next to a missing or stale certificate.
+                self.delete_key()
+                raise
+            yk_update_chuid(self.session)
         except YubiKeyInvalidPinError as e:
             raise KeygenError(e) from e
         except YubiKeyApduError as e:
