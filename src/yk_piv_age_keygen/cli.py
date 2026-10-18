@@ -195,7 +195,7 @@ class Keygen:
         slot: int = 1,
         pin: str | None = None,
         mgmt_key: str | None = None,
-        pin_policy: str = "cached",
+        pin_policy: str = "once",
         touch_policy: str = "always",
         force: bool = False,  # noqa: FBT001,FBT002 # booelan in function definition
     ) -> None:
