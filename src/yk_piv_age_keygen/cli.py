@@ -112,7 +112,8 @@ def arg_parse() -> argparse.Namespace:
         "--force",
         action="store_true",
         default=False,
-        help="force replacement of currently existing key/certificate in slot",
+        help="replace an existing key/certificate in the slot, permanently"
+        " destroying it (asks for confirmation if stdin is a terminal)",
     )
 
     return parser.parse_args()
@@ -379,19 +380,10 @@ class Keygen:
             msg = "check_slot_empty: No session exists."
             raise KeygenError(msg)
 
+        has_key = False
         try:
             self.session.get_slot_metadata(self.slot)
-            if not self.force:
-                msg = (
-                    f"PIV slot {self.slot:X} (RETIRED{slotnum(self.slot)})"
-                    " already contains a key."
-                )
-                raise KeygenError(msg)
-            self.log.info(
-                "Existing key in PIV slot %X (RETIRED%d) will be replaced.",
-                self.slot,
-                slotnum(self.slot),
-            )
+            has_key = True
         except YubiKeyApduError as e:
             if e.sw == YUBIKEY_STATUS_WORD.REFERENCE_DATA_NOT_FOUND:
                 self.log.info(
@@ -403,20 +395,9 @@ class Keygen:
                 msg = f"Failed reading key in PIV slot {self.slot:X}: {e.sw}"
                 raise KeygenError(msg) from e
 
+        crt: x509.Certificate | None = None
         try:
-            self.session.get_certificate(self.slot)
-            if not self.force:
-                msg = (
-                    f"PIV slot {self.slot:X} (RETIRED{slotnum(self.slot)})"
-                    " already contains a certificate."
-                )
-                raise KeygenError(msg)
-            self.log.info(
-                "Existing key and certificate in PIV slot %X"
-                " (RETIRED%d) will be replaced.",
-                self.slot,
-                slotnum(self.slot),
-            )
+            crt = self.session.get_certificate(self.slot)
         except YubiKeyApduError as e:
             if e.sw == YUBIKEY_STATUS_WORD.FILE_NOT_FOUND:
                 self.log.info(
@@ -427,6 +408,43 @@ class Keygen:
             else:
                 msg = f"Failed reading certificate in PIV slot {self.slot:X}: {e.sw}"
                 raise KeygenError(msg) from e
+
+        if not has_key and crt is None:
+            return
+
+        contents = "a key" if crt is None else "a certificate"
+        if has_key and crt is not None:
+            contents = "a key and certificate"
+        if not self.force:
+            msg = (
+                f"PIV slot {self.slot:X} (RETIRED{slotnum(self.slot)})"
+                f" already contains {contents}, use --force to replace it."
+            )
+            raise KeygenError(msg)
+
+        self.confirm_replace(contents, crt)
+
+    def confirm_replace(self, contents: str, crt: x509.Certificate | None) -> None:
+        """Warn that --force destroys the existing key, confirm if interactive."""
+        identity = "unknown identity"
+        if crt is not None:
+            cns = crt.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+            if cns:
+                identity = repr(cns[0].value)
+
+        self.log.warning(
+            "Replacing %s in PIV slot %X (RETIRED%d) (%s) permanently destroys"
+            " it. Anything encrypted to it can no longer be decrypted.",
+            contents,
+            self.slot,
+            slotnum(self.slot),
+            identity,
+        )
+
+        # With piped stdin (secrets), --force itself is the confirmation, as a
+        # prompt would consume a line meant for the PIN or management key.
+        if sys.stdin.isatty():
+            click.confirm("Replace it?", abort=True)
 
     def get_device(self) -> None:
         """Select a YubiKey device (by serial, or the only connected device)."""

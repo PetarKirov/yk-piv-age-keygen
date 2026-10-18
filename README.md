@@ -79,8 +79,9 @@ options:
                         new PIN policy for slot (default: once)
   -T, --touch-policy {never,always,cached}
                         new touch policy for slot (default: always)
-  --force               force replacement of currently existing
-                        key/certificate in slot
+  --force               replace an existing key/certificate in the slot,
+                        permanently destroying it (asks for confirmation if
+                        stdin is a terminal)
 ```
 
 Secrets are never accepted as arguments, since those are visible to other
@@ -91,6 +92,12 @@ $ pass show yubikey/piv-pin | yk-piv-age-keygen -s 20 --pin-stdin
 $ { pass show yubikey/piv-pin; pass show yubikey/piv-mgmt-key; } \
     | yk-piv-age-keygen -s 20 --pin-stdin --mgmt-key-stdin
 ```
+
+Without `--force`, the tool refuses to touch a slot that already contains a key
+or certificate. With `--force`, the existing key is destroyed for good: anything
+encrypted to its age recipient can no longer be decrypted. The identity being
+replaced is logged first, and if stdin is a terminal you are asked to confirm.
+When secrets are piped in, `--force` itself counts as the confirmation.
 
 If generating the certificate fails (e.g. the touch prompt times out), the new
 key and any stale certificate are deleted from the slot again (deleting keys
