@@ -277,6 +277,7 @@ class Keygen:
         self.device: YubiKeyScriptingDevice | None = None
         self.key_type = YUBIKEY_KEY_TYPE.ECCP256
         self.log = logging.getLogger(__name__)
+        self.mgmt_key_derived: bool = False
         self.pubkey: EllipticCurvePublicKey | None = None
         self.session: YubiKeyPivSession | None = None
 
@@ -327,6 +328,7 @@ class Keygen:
             except Exception as e:
                 msg = "Failed to get PIN derived management key."
                 raise KeygenError(msg) from e
+            self.mgmt_key_derived = True
             self.log.info("Management key derived from PIN.")
         elif pivman_data.has_stored_key:
             try:
@@ -359,10 +361,10 @@ class Keygen:
         self.session.verify_pin(self.pin)
         self.authenticated = True
 
-        self.warn_default_credentials()
+        self.warn_weak_credentials()
 
-    def warn_default_credentials(self) -> None:
-        """Warn if the PIN or management key still has its factory default value."""
+    def warn_weak_credentials(self) -> None:
+        """Warn about default credentials or a PIN-derived management key."""
         if self.pin == YUBIKEY_DEFAULT_PIN:
             self.log.warning(
                 "PIN is set to the default value,"
@@ -372,6 +374,23 @@ class Keygen:
             self.log.warning(
                 "Management key is set to the default value, change it using"
                 " 'ykman piv access change-management-key --generate --protect'.",
+            )
+        if self.mgmt_key_derived:
+            self.log.warning(
+                "Management key is derived from the PIN (deprecated), anyone"
+                " knowing the PIN can compute it. Change it using"
+                " 'ykman piv access change-management-key --generate --protect'.",
+            )
+
+    def warn_weak_policies(self) -> None:
+        """Warn if the key will be usable without both PIN and touch."""
+        if (
+            self.pin_policy == PinPolicy.NEVER
+            and self.touch_policy == TouchPolicy.NEVER
+        ):
+            self.log.warning(
+                "PIN and touch policy are both 'never', any process on this"
+                " host can decrypt with the key while the YubiKey is plugged in.",
             )
 
     def check_slot_empty(self) -> None:
@@ -637,6 +656,7 @@ class Keygen:
 
     def main(self) -> None:
         """Execute the main workflow."""
+        self.warn_weak_policies()
         try:
             self.get_device()
             self.get_session()
