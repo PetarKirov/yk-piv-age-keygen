@@ -241,8 +241,8 @@ class Keygen:
             if not isinstance(serial, int):
                 msg = f"Serial {serial!r} is not an integer."
                 raise KeygenError(msg)
-            if serial < 0:
-                msg = f"Serial {serial!r} is < 0."
+            if serial <= 0:
+                msg = f"Serial {serial!r} is not a positive integer."
                 raise KeygenError(msg)
             self.serial = serial
 
@@ -311,9 +311,11 @@ class Keygen:
                 raise KeygenError(msg)
 
         if not self.pin:
+            device = "YubiKey"
+            if self.serial is not None:
+                device += f" with serial '{self.serial}'"
             self.pin = click.prompt(
-                f"Enter PIN for YubiKey with serial '{self.serial}'"
-                f" (default: {YUBIKEY_DEFAULT_PIN})",
+                f"Enter PIN for {device} (default: {YUBIKEY_DEFAULT_PIN})",
                 hide_input=True,
             )
         self.session.verify_pin(self.pin)
@@ -437,7 +439,7 @@ class Keygen:
             msg = "No YubiKey detected."
             raise KeygenError(msg)
 
-        if self.serial:
+        if self.serial is not None:
             for _dev, dev_info in devices:
                 if dev_info.serial == self.serial:
                     dev = _dev
@@ -455,10 +457,13 @@ class Keygen:
             )
 
         self.device = YubiKeyScriptingDevice(dev, dev_info)
-        if not self.serial:
+        if self.serial is None:
             self.serial = dev_info.serial
 
-        self.log.info("Found YubiKey with serial '%d'.", self.serial)
+        if self.serial is None:
+            self.log.info("Found YubiKey without a readable serial.")
+        else:
+            self.log.info("Found YubiKey with serial '%d'.", self.serial)
 
     def generate_certificate(self) -> None:
         """Create and store a certificate with age-plugin-yubikey metadata."""
