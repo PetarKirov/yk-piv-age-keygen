@@ -91,6 +91,29 @@
       );
     in
     {
+      packages = forAllSystems (
+        pkgs:
+        let
+          pythonSet = pythonSets.${pkgs.stdenv.hostPlatform.system};
+          inherit (pkgs.callPackages pyproject-nix.build.util { }) mkApplication;
+
+          # Expose only the yk-piv-age-keygen script, not the venv's python.
+          app = mkApplication {
+            venv = pythonSet.mkVirtualEnv "yk-piv-age-keygen-env" workspace.deps.default;
+            package = pythonSet.yk-piv-age-keygen;
+          };
+        in
+        {
+          default = app.overrideAttrs (old: {
+            meta = old.meta // {
+              description = "YubiKey PIV key generator compatible with age-plugin-yubikey";
+              license = lib.licenses.mit;
+              mainProgram = "yk-piv-age-keygen";
+            };
+          });
+        }
+      );
+
       devShells = forAllSystems (
         pkgs:
         let
