@@ -8,12 +8,16 @@
 
 """Tests for the yk-piv-age-keygen CLI, with the YubiKey mocked out."""
 
+import contextlib
 import logging
 from types import SimpleNamespace
 from unittest import mock
 
 import click
 import pytest
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from yubikit.core import NotSupportedError
 from yubikit.core.smartcard import SW, ApduError
 
@@ -316,6 +320,61 @@ class TestGeneration:
             keygen.main()
         keygen.session.delete_certificate.assert_called_once_with(keygen.slot)
         keygen.session.delete_key.assert_called_once_with(keygen.slot)
+
+
+class TestName:
+    """The identity name stored in the certificate."""
+
+    @pytest.fixture(autouse=True)
+    def _software_signing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Sign certificates with a software key instead of the YubiKey."""
+        key = ec.generate_private_key(ec.SECP256R1())
+        monkeypatch.setattr(cli, "yk_prompt_timeout", contextlib.nullcontext)
+        monkeypatch.setattr(
+            cli,
+            "yk_sign_certificate_builder",
+            lambda _session, _slot, _key_type, builder: builder.sign(
+                key,
+                hashes.SHA256(),
+            ),
+        )
+
+    @staticmethod
+    def certificate_cn(kg: cli.Keygen) -> str:
+        """Generate a certificate and return its CN."""
+        kg.session = mock.Mock()
+        kg.pubkey = ec.generate_private_key(ec.SECP256R1()).public_key()
+        kg.generate_certificate()
+        cns = kg.crt.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+        return cns[0].value
+
+    def test_default_name(self) -> None:
+        """Without a name, the CN matches age-plugin-yubikey's default."""
+        kg = cli.Keygen()
+        assert self.certificate_cn(kg) == f"age identity {kg._pubkey_tag()}"  # noqa: SLF001
+
+    def test_custom_name(self) -> None:
+        """A given name is used as the CN."""
+        assert self.certificate_cn(cli.Keygen(name="laptop")) == "laptop"
+
+    def test_custom_name_unicode(self) -> None:
+        """Printable non-ASCII names and spaces are allowed."""
+        assert self.certificate_cn(cli.Keygen(name="Büro laptop")) == "Büro laptop"
+
+    @pytest.mark.parametrize("name", ["", "x" * 65])
+    def test_invalid_name_length(self, name: str) -> None:
+        """Names that don't fit in a CN are rejected."""
+        with pytest.raises(cli.KeygenError, match="1-64 characters"):
+            cli.Keygen(name=name)
+
+    @pytest.mark.parametrize(
+        "name",
+        ["a\nAGE-PLUGIN-YUBIKEY-1", "a\tb", "\x1b[31mred", "a\u2028b"],
+    )
+    def test_non_printable_name(self, name: str) -> None:
+        """Control and line separator characters are rejected."""
+        with pytest.raises(cli.KeygenError, match="non-printable"):
+            cli.Keygen(name=name)
 
 
 class TestWarnings:

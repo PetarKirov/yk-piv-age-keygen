@@ -109,6 +109,11 @@ def arg_parse() -> argparse.Namespace:
         help="new touch policy for slot (default: always)",
     )
     parser.add_argument(
+        "--name",
+        help="name for the generated identity (default: 'age identity HEX_TAG')",
+        metavar="<name>",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         default=False,
@@ -198,12 +203,28 @@ class Keygen:
         pin_policy: str = "once",
         touch_policy: str = "always",
         force: bool = False,  # noqa: FBT001,FBT002 # booelan in function definition
+        name: str | None = None,
     ) -> None:
         """Initialize options for key generation."""
         if not isinstance(force, bool):
             msg = "Non-bool force option provided."
             raise KeygenError(msg)
         self.force = force
+
+        if name is not None:
+            if not isinstance(name, str):
+                msg = "Non-string name provided."
+                raise KeygenError(msg)
+            # The name is stored as the certificate's CN, limited to 64 chars.
+            if not 1 <= len(name) <= 64:  # noqa: PLR2004 # Magic value used in comparison
+                msg = "Name must be 1-64 characters long."
+                raise KeygenError(msg)
+            # It's printed by age-plugin-yubikey --list and as a comment in
+            # --identity output, where e.g. a newline could inject lines.
+            if not name.isprintable():
+                msg = "Name must not contain control or non-printable characters."
+                raise KeygenError(msg)
+        self.name = name
 
         if pin is not None:
             if not isinstance(pin, str):
@@ -544,7 +565,7 @@ class Keygen:
                 x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "0.5.0"),
                 x509.NameAttribute(
                     NameOID.COMMON_NAME,
-                    f"age identity {self._pubkey_tag()}",
+                    self.name or f"age identity {self._pubkey_tag()}",
                 ),
             ],
         )
@@ -755,6 +776,7 @@ def main() -> None:
             opts.pin_policy,
             opts.touch_policy,
             opts.force,
+            opts.name,
         ).main()
         raise SystemExit
     except KeygenDeviceSelectionError as e:

@@ -62,7 +62,7 @@ should this.
 $ yk-piv-age-keygen --help
 usage: yk-piv-age-keygen [-h] [-v] [-q] [-S <num>] -s {1..20} [--pin-stdin]
                          [--mgmt-key-stdin] [-P {never,once,always}]
-                         [-T {never,always,cached}] [--force]
+                         [-T {never,always,cached}] [--name <name>] [--force]
 
 options:
   -h, --help            show this help message and exit
@@ -79,6 +79,8 @@ options:
                         new PIN policy for slot (default: once)
   -T, --touch-policy {never,always,cached}
                         new touch policy for slot (default: always)
+  --name <name>         name for the generated identity (default: 'age
+                        identity HEX_TAG')
   --force               replace an existing key/certificate in the slot,
                         permanently destroying it (asks for confirmation if
                         stdin is a terminal)
