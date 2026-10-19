@@ -99,6 +99,10 @@ encrypted to its age recipient can no longer be decrypted. The identity being
 replaced is logged first, and if stdin is a terminal you are asked to confirm.
 When secrets are piped in, `--force` itself counts as the confirmation.
 
+YubiKeys older than 5.3 can't report whether a slot contains a key, only
+whether it contains a certificate. Since a key without a certificate can't be
+ruled out, `--force` is always required on those.
+
 If generating the certificate fails (e.g. the touch prompt times out), the new
 key and any stale certificate are deleted from the slot again (deleting keys
 requires YubiKey 5.7+).

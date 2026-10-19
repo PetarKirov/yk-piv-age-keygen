@@ -401,55 +401,74 @@ class Keygen:
                 " host can decrypt with the key while the YubiKey is plugged in.",
             )
 
-    def check_slot_empty(self) -> None:
-        """Ensure the slot does not contain a certificate already (unless forced)."""
-        if self.session is None:
-            msg = "check_slot_empty: No session exists."
-            raise KeygenError(msg)
-
-        has_key = False
+    def _slot_has_key(self) -> bool | None:
+        """Return whether the slot contains a key, None if it can't be detected."""
         try:
             self.session.get_slot_metadata(self.slot)
-            has_key = True
+        except YubiKeyNotSupportedError:
+            self.log.warning(
+                "This YubiKey can't report whether PIV slot %X (RETIRED%d)"
+                " contains a key (requires 5.3+).",
+                self.slot,
+                slotnum(self.slot),
+            )
+            return None
         except YubiKeyApduError as e:
-            if e.sw == YUBIKEY_STATUS_WORD.REFERENCE_DATA_NOT_FOUND:
-                self.log.info(
-                    "No existing key found in PIV slot %X (RETIRED%d).",
-                    self.slot,
-                    slotnum(self.slot),
-                )
-            else:
+            if e.sw != YUBIKEY_STATUS_WORD.REFERENCE_DATA_NOT_FOUND:
                 msg = f"Failed reading key in PIV slot {self.slot:X}: {format_sw(e.sw)}"
                 raise KeygenError(msg) from e
+            self.log.info(
+                "No existing key found in PIV slot %X (RETIRED%d).",
+                self.slot,
+                slotnum(self.slot),
+            )
+            return False
+        return True
 
-        crt: x509.Certificate | None = None
+    def _slot_certificate(self) -> x509.Certificate | None:
+        """Return the certificate in the slot, None if there is none."""
         try:
-            crt = self.session.get_certificate(self.slot)
+            return self.session.get_certificate(self.slot)
         except YubiKeyApduError as e:
-            if e.sw == YUBIKEY_STATUS_WORD.FILE_NOT_FOUND:
-                self.log.info(
-                    "No existing certificate found in PIV slot %X (RETIRED%d).",
-                    self.slot,
-                    slotnum(self.slot),
-                )
-            else:
+            if e.sw != YUBIKEY_STATUS_WORD.FILE_NOT_FOUND:
                 msg = (
                     f"Failed reading certificate in PIV slot {self.slot:X}:"
                     f" {format_sw(e.sw)}"
                 )
                 raise KeygenError(msg) from e
+            self.log.info(
+                "No existing certificate found in PIV slot %X (RETIRED%d).",
+                self.slot,
+                slotnum(self.slot),
+            )
+            return None
 
-        if not has_key and crt is None:
+    def check_slot_empty(self) -> None:
+        """Ensure the slot contains no key or certificate (unless forced)."""
+        if self.session is None:
+            msg = "check_slot_empty: No session exists."
+            raise KeygenError(msg)
+
+        has_key = self._slot_has_key()
+        crt = self._slot_certificate()
+
+        if has_key is False and crt is None:
             return
 
-        contents = "a key" if crt is None else "a certificate"
-        if has_key and crt is not None:
-            contents = "a key and certificate"
-        if not self.force:
+        slot = f"PIV slot {self.slot:X} (RETIRED{slotnum(self.slot)})"
+        if has_key is None and crt is None:
+            # An undetectable key must not be overwritten without --force.
+            contents = "any key"
             msg = (
-                f"PIV slot {self.slot:X} (RETIRED{slotnum(self.slot)})"
-                f" already contains {contents}, use --force to replace it."
+                f"{slot} may contain a key that this YubiKey can't detect"
+                " (requires 5.3+), use --force to replace it."
             )
+        else:
+            contents = "a key" if crt is None else "a certificate"
+            if has_key and crt is not None:
+                contents = "a key and certificate"
+            msg = f"{slot} already contains {contents}, use --force to replace it."
+        if not self.force:
             raise KeygenError(msg)
 
         self.confirm_replace(contents, crt)
