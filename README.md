@@ -99,8 +99,9 @@ hardens the tool against leaking secrets and destroying keys by accident:
   confirmation when stdin is a terminal. On YubiKeys older than 5.3, which
   can't report whether a slot holds a key, `--force` is always required.
 - If certificate generation fails, the new key is deleted again. If key
-  generation itself is interrupted, the tool says the slot state is uncertain
-  and how to recover.
+  generation itself is interrupted, or fails with an error that may have
+  written to the slot, the tool says the slot state is uncertain and how to
+  recover.
 - `--name` sets the identity name, like `age-plugin-yubikey --generate --name`.
   Names with control or other non-printable characters are rejected.
 - Warnings are logged for a default PIN or management key, a PIN-derived

@@ -315,19 +315,36 @@ class TestGeneration:
     def _authenticated(self, keygen: cli.Keygen) -> None:
         keygen.authenticated = True
 
+    @pytest.mark.parametrize(
+        "sw",
+        [SW.SECURITY_CONDITION_NOT_SATISFIED, SW.INCORRECT_PARAMETERS, 0x6400],
+    )
     def test_rejected_generation(
         self,
         keygen: cli.Keygen,
         caplog: pytest.LogCaptureFixture,
+        sw: int,
     ) -> None:
         """A rejected command left the slot untouched, so no warning."""
-        keygen.session.generate_key.side_effect = ApduError(
-            b"",
-            SW.SECURITY_CONDITION_NOT_SATISFIED,
-        )
+        keygen.session.generate_key.side_effect = ApduError(b"", sw)
         with pytest.raises(ApduError):
             keygen.generate_key()
-        assert "interrupted" not in caplog.text
+        assert "may now contain" not in caplog.text
+
+    @pytest.mark.parametrize("sw", [SW.MEMORY_FAILURE, 0x6300, 0x6F00, 0x9999])
+    def test_ambiguous_generation_failure(
+        self,
+        keygen: cli.Keygen,
+        caplog: pytest.LogCaptureFixture,
+        sw: int,
+    ) -> None:
+        """An error that may have written to the slot leaves it uncertain."""
+        keygen.session.generate_key.side_effect = ApduError(b"", sw)
+        with pytest.raises(ApduError):
+            keygen.generate_key()
+        assert f"failed ({cli.format_sw(sw)})" in caplog.text
+        assert "may now contain" in caplog.text
+        keygen.session.delete_key.assert_not_called()
 
     def test_interrupted_generation(
         self,

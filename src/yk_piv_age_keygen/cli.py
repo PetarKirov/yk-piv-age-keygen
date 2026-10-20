@@ -172,6 +172,15 @@ def format_sw(sw: int) -> str:
         return f"0x{sw:04X}"
 
 
+def sw_left_memory_unchanged(sw: int) -> bool:
+    """Return whether a failed command's status word rules out any write."""
+    # ISO 7816-4: 62xx and 64xx leave non-volatile memory unchanged, and
+    # 66xx-6Exx are checks failing before anything is done. 63xx and 65xx may
+    # have changed it, and 6Fxx gives no diagnosis, so assume the worst.
+    sw1 = sw >> 8
+    return sw1 in (0x62, 0x64) or 0x66 <= sw1 <= 0x6E  # noqa: PLR2004 # Magic value
+
+
 class KeygenError(Exception):
     """Base exception raised in most cases."""
 
@@ -690,21 +699,28 @@ class Keygen:
                 self.pin_policy,
                 self.touch_policy,
             )
-        except YubiKeyApduError:
-            # Rejected by the YubiKey, so nothing was written to the slot.
+        except YubiKeyApduError as e:
+            if sw_left_memory_unchanged(e.sw):
+                # Rejected by the YubiKey, so nothing was written to the slot.
+                raise
+            self.warn_slot_uncertain(f"failed ({format_sw(e.sw)})")
             raise
         except BaseException:
             # The YubiKey may have committed the new key before the response
             # was lost, so the slot state is unknown and can't be cleaned up.
-            self.log.error(
-                "Key generation in PIV slot %X (RETIRED%d) was interrupted, the"
-                " slot may now contain a new key next to a missing or stale"
-                " certificate. Check it with 'ykman piv info' and run again with"
-                " --force to replace it.",
-                self.slot,
-                slotnum(self.slot),
-            )
+            self.warn_slot_uncertain("was interrupted")
             raise
+
+    def warn_slot_uncertain(self, what: str) -> None:
+        """Explain that a failed key generation may have changed the slot."""
+        self.log.error(
+            "Key generation in PIV slot %X (RETIRED%d) %s, the slot may now"
+            " contain a new key next to a missing or stale certificate. Check it"
+            " with 'ykman piv info' and run again with --force to replace it.",
+            self.slot,
+            slotnum(self.slot),
+            what,
+        )
 
     def get_session(self) -> None:
         """Open a PIV session against the selected YubiKey smartcard interface."""
