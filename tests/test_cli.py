@@ -363,6 +363,49 @@ class TestGeneration:
         keygen.session.delete_key.assert_called_once_with(keygen.slot)
 
 
+class TestCleanup:
+    """Deleting the new key after a failed certificate generation."""
+
+    def test_complete_cleanup(
+        self,
+        keygen: cli.Keygen,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The slot is only reported empty if both deletions succeeded."""
+        with caplog.at_level(logging.INFO):
+            keygen.delete_key()
+        assert "is now empty" in caplog.text
+        assert "may still contain" not in caplog.text
+
+    @pytest.mark.parametrize(
+        ("crt_error", "key_error", "leftovers"),
+        [
+            (OSError("crt"), None, ["certificate"]),
+            (None, OSError("key"), ["the new key"]),
+            (None, NotSupportedError("5.7"), ["the new key"]),
+            (OSError("crt"), NotSupportedError("5.7"), ["the new key", "certificate"]),
+        ],
+    )
+    def test_partial_cleanup(
+        self,
+        keygen: cli.Keygen,
+        caplog: pytest.LogCaptureFixture,
+        crt_error: Exception | None,
+        key_error: Exception | None,
+        leftovers: list[str],
+    ) -> None:
+        """Whatever couldn't be deleted is reported, never an empty slot."""
+        keygen.session.delete_certificate.side_effect = crt_error
+        keygen.session.delete_key.side_effect = key_error
+        with caplog.at_level(logging.INFO):
+            keygen.delete_key()
+        assert "is now empty" not in caplog.text
+        assert "may still contain" in caplog.text
+        for leftover in leftovers:
+            assert leftover in caplog.text
+        assert ("must not be used" in caplog.text) == (crt_error is not None)
+
+
 class TestName:
     """The identity name stored in the certificate."""
 

@@ -628,6 +628,7 @@ class Keygen:
             slotnum(self.slot),
         )
 
+        crt_deleted = False
         try:
             self.session.delete_certificate(self.slot)
         except Exception as e:  # noqa: BLE001 # Do not catch blind exception
@@ -636,24 +637,39 @@ class Keygen:
                 self.slot,
                 e,
             )
+        else:
+            crt_deleted = True
 
+        key_deleted = False
         try:
             self.session.delete_key(self.slot)
         except YubiKeyNotSupportedError:
             self.log.error(
-                "Deleting keys is not supported by this YubiKey (requires 5.7+),"
-                " PIV slot %X (RETIRED%d) contains a key without a certificate.",
-                self.slot,
-                slotnum(self.slot),
+                "Deleting keys is not supported by this YubiKey (requires 5.7+).",
             )
         except Exception as e:  # noqa: BLE001 # Do not catch blind exception
             self.log.error("Failed deleting key in PIV slot %X: %s", self.slot, e)
         else:
-            self.log.info(
-                "PIV slot %X (RETIRED%d) is now empty.",
-                self.slot,
-                slotnum(self.slot),
-            )
+            key_deleted = True
+
+        slot = f"PIV slot {self.slot:X} (RETIRED{slotnum(self.slot)})"
+        if crt_deleted and key_deleted:
+            self.log.info("%s is now empty.", slot)
+            return
+
+        leftovers = []
+        if not key_deleted:
+            leftovers.append("the new key")
+        if not crt_deleted:
+            # age-plugin-yubikey finds recipients via the certificate, so it
+            # would still offer one that the slot can't decrypt.
+            leftovers.append("a certificate whose age recipient must not be used")
+        self.log.error(
+            "%s may still contain %s. Check it with 'ykman piv info' and run"
+            " again with --force to replace it.",
+            slot,
+            " and ".join(leftovers),
+        )
 
     def generate_key(self) -> None:
         """Create a new key in the selected PIV slot."""
