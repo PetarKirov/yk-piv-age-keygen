@@ -38,6 +38,7 @@ from yubikit.core import NotSupportedError as YubiKeyNotSupportedError
 from yubikit.core import Version as YubiKeyVersion
 from yubikit.core.smartcard import SW as YUBIKEY_STATUS_WORD
 from yubikit.core.smartcard import ApduError as YubiKeyApduError
+from yubikit.core.smartcard import SmartCardConnection
 from yubikit.management import DeviceInfo as YubiKeyDeviceInfo
 from yubikit.piv import DEFAULT_MANAGEMENT_KEY as YUBIKEY_DEFAULT_MANAGEMENT_KEY
 from yubikit.piv import KEY_TYPE as YUBIKEY_KEY_TYPE
@@ -331,6 +332,7 @@ class Keygen:
                 raise KeygenError(msg)
 
         self.authenticated: bool = False
+        self.connection: SmartCardConnection | None = None
         self.crt: x509.Certificate | None = None
         self.device: YubiKeyScriptingDevice | None = None
         self.key_type = YUBIKEY_KEY_TYPE.ECCP256
@@ -766,7 +768,20 @@ class Keygen:
             )
             raise KeygenError(msg)
 
-        self.session = YubiKeyPivSession(connection)
+        self.connection = connection
+        try:
+            self.session = YubiKeyPivSession(connection)
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        """Release the exclusive connection, ending the authenticated session."""
+        self.session = None
+        self.authenticated = False
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
 
     def main(self) -> None:
         """Execute the main workflow."""
@@ -790,6 +805,8 @@ class Keygen:
         except YubiKeyApduError as e:
             msg = f"APDU: {format_sw(e.sw)}"
             raise KeygenError(msg) from e
+        finally:
+            self.close()
 
 
 def read_stdin_secrets(

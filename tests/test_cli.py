@@ -221,10 +221,11 @@ class TestCheckSlotEmpty:
         occupy_slot(keygen)
         monkeypatch.setattr(keygen, "get_device", lambda: None)
         monkeypatch.setattr(keygen, "get_session", lambda: None)
+        session = keygen.session
         with pytest.raises(cli.KeygenError, match="use --force"):
             keygen.main()
-        keygen.session.verify_pin.assert_not_called()
-        keygen.session.generate_key.assert_not_called()
+        session.verify_pin.assert_not_called()
+        session.generate_key.assert_not_called()
 
     def test_force_confirms_on_tty(
         self,
@@ -288,10 +289,11 @@ class TestCheckSlotEmpty:
         """On firmware < 5.3, a possible key isn't overwritten without --force."""
         monkeypatch.setattr(keygen, "get_device", lambda: None)
         monkeypatch.setattr(keygen, "get_session", lambda: None)
+        session = keygen.session
         with pytest.raises(cli.KeygenError, match="can't detect"):
             keygen.main()
-        keygen.session.verify_pin.assert_not_called()
-        keygen.session.generate_key.assert_not_called()
+        session.verify_pin.assert_not_called()
+        session.generate_key.assert_not_called()
 
     @pytest.mark.usefixtures("no_metadata_support")
     def test_undetectable_key_with_force(
@@ -374,10 +376,56 @@ class TestGeneration:
             "generate_certificate",
             mock.Mock(side_effect=RuntimeError("touch timeout")),
         )
+        session = keygen.session
         with pytest.raises(RuntimeError, match="touch timeout"):
             keygen.main()
-        keygen.session.delete_certificate.assert_called_once_with(keygen.slot)
-        keygen.session.delete_key.assert_called_once_with(keygen.slot)
+        session.delete_certificate.assert_called_once_with(keygen.slot)
+        session.delete_key.assert_called_once_with(keygen.slot)
+
+
+class TestClose:
+    """Releasing the exclusive connection."""
+
+    def test_closed_after_main(
+        self,
+        keygen: cli.Keygen,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The connection is closed when main() fails, too."""
+        connection = mock.Mock()
+        keygen.connection = connection
+        occupy_slot(keygen)
+        monkeypatch.setattr(keygen, "get_device", lambda: None)
+        monkeypatch.setattr(keygen, "get_session", lambda: None)
+        with pytest.raises(cli.KeygenError):
+            keygen.main()
+        connection.close.assert_called_once()
+        assert keygen.session is None
+        assert keygen.connection is None
+        assert not keygen.authenticated
+
+    def test_closed_if_session_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The connection is closed if the PIV session can't be created."""
+        monkeypatch.setattr(
+            cli,
+            "ExclusiveConnectCardConnection",
+            FakeExclusiveConnection,
+        )
+        monkeypatch.setattr(
+            cli,
+            "YubiKeyPivSession",
+            mock.Mock(side_effect=ApduError(b"", SW.FILE_NOT_FOUND)),
+        )
+        connection = mock.Mock(connection=FakeExclusiveConnection())
+        kg = cli.Keygen()
+        kg.device = mock.Mock(**{"smart_card.return_value": connection})
+        with pytest.raises(ApduError):
+            kg.get_session()
+        connection.close.assert_called_once()
+        assert kg.connection is None
 
 
 class TestCleanup:
