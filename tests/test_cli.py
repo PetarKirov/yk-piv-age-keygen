@@ -20,7 +20,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
-from yubikit.core import NotSupportedError
+from yubikit.core import NotSupportedError, Version
 from yubikit.core.smartcard import SW, ApduError
 
 from yk_piv_age_keygen import cli
@@ -34,7 +34,7 @@ class FakeExclusiveConnection:
 def keygen() -> cli.Keygen:
     """Return a Keygen for slot 20 with a mocked PIV session."""
     kg = cli.Keygen(slot=20, pin="654321")
-    kg.session = mock.Mock()
+    kg.session = mock.Mock(version=Version(5, 7, 1))
     return kg
 
 
@@ -490,6 +490,28 @@ class TestWarnings:
         """The default policies aren't warned about."""
         cli.Keygen().warn_weak_policies()
         assert not caplog.text
+
+    @pytest.mark.parametrize(
+        ("version", "warned"),
+        [
+            (Version(4, 3, 7), False),
+            (Version(5, 0, 0), True),
+            (Version(5, 4, 3), True),
+            (Version(5, 7, 0), False),
+        ],
+    )
+    def test_eucleak_firmware(
+        self,
+        keygen: cli.Keygen,
+        caplog: pytest.LogCaptureFixture,
+        version: Version,
+        *,
+        warned: bool,
+    ) -> None:
+        """YubiKey 5 firmware before 5.7 is warned about (YSA-2024-03)."""
+        keygen.session.version = version
+        keygen.warn_weak_firmware()
+        assert ("YSA-2024-03" in caplog.text) == warned
 
     def test_derived_management_key(
         self,

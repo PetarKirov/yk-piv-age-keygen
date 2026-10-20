@@ -35,6 +35,7 @@ from ykman.piv import sign_certificate_builder as yk_sign_certificate_builder
 from ykman.scripting import ScriptingDevice as YubiKeyScriptingDevice
 from yubikit.core import InvalidPinError as YubiKeyInvalidPinError
 from yubikit.core import NotSupportedError as YubiKeyNotSupportedError
+from yubikit.core import Version as YubiKeyVersion
 from yubikit.core.smartcard import SW as YUBIKEY_STATUS_WORD
 from yubikit.core.smartcard import ApduError as YubiKeyApduError
 from yubikit.management import DeviceInfo as YubiKeyDeviceInfo
@@ -448,6 +449,19 @@ class Keygen:
                 " host can decrypt with the key while the YubiKey is plugged in.",
             )
 
+    def warn_weak_firmware(self) -> None:
+        """Warn if the firmware is affected by the EUCLEAK side channel."""
+        version = self.session.version
+        if YubiKeyVersion(5, 0, 0) <= version < YubiKeyVersion(5, 7, 0):
+            self.log.warning(
+                "YubiKey firmware %s is affected by YSA-2024-03 (EUCLEAK):"
+                " with physical access, lab equipment and the ability to make"
+                " it sign (normally requiring the PIN), the P-256 key can be"
+                " extracted. Prefer a YubiKey with firmware 5.7+ for new"
+                " identities.",
+                version,
+            )
+
     def _slot_has_key(self) -> bool | None:
         """Return whether the slot contains a key, None if it can't be detected."""
         try:
@@ -760,6 +774,7 @@ class Keygen:
         try:
             self.get_device()
             self.get_session()
+            self.warn_weak_firmware()
             self.check_slot_empty()
             self.authenticate_piv()
             self.generate_key()

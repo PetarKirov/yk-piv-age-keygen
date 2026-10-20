@@ -105,7 +105,9 @@ hardens the tool against leaking secrets and destroying keys by accident:
 - `--name` sets the identity name, like `age-plugin-yubikey --generate --name`.
   Names with control or other non-printable characters are rejected.
 - Warnings are logged for a default PIN or management key, a PIN-derived
-  management key, and PIN and touch policies that are both `never`.
+  management key, PIN and touch policies that are both `never`, and YubiKey 5
+  firmware before 5.7, whose P-256 keys can be extracted with physical access
+  ([YSA-2024-03](https://www.yubico.com/support/security-advisories/ysa-2024-03/)).
 - Unknown APDU status words are reported instead of crashing, and the `Keygen`
   class has a valid default PIN policy.
 - Dependencies are upgraded (cryptography 50, yubikey-manager 5.9), there is a
