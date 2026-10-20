@@ -9,7 +9,9 @@
 """Tests for the yk-piv-age-keygen CLI, with the YubiKey mocked out."""
 
 import contextlib
+import getpass
 import logging
+import warnings
 from types import SimpleNamespace
 from unittest import mock
 
@@ -70,6 +72,45 @@ def test_non_positive_serial_rejected(serial: int) -> None:
     """Serials <= 0 are rejected rather than treated as "no serial"."""
     with pytest.raises(cli.KeygenError, match="not a positive integer"):
         cli.Keygen(serial=serial)
+
+
+class TestPromptSecret:
+    """Reading secrets interactively."""
+
+    def test_hidden_input(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Secrets are read with echo disabled."""
+        monkeypatch.setattr(getpass, "getpass", lambda _prompt: "654321")
+        assert cli.prompt_secret("PIN") == "654321"
+
+    def test_echo_not_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """If echo can't be disabled, nothing is read and an error is raised."""
+        read = mock.Mock(return_value="654321")
+
+        def fallback_getpass(prompt: str) -> str:
+            warnings.warn("Can not control echo", getpass.GetPassWarning, stacklevel=1)
+            return read(prompt)
+
+        monkeypatch.setattr(getpass, "getpass", fallback_getpass)
+        with pytest.raises(cli.KeygenError, match="--pin-stdin"):
+            cli.prompt_secret("PIN")
+        read.assert_not_called()
+
+    def test_pin_prompt_fails_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The PIN isn't verified if it couldn't be read securely."""
+        kg = cli.Keygen()
+        kg.session = mock.Mock()
+        monkeypatch.setattr(cli, "yk_get_pivman_data", mock.Mock())
+        monkeypatch.setattr(
+            cli,
+            "prompt_secret",
+            mock.Mock(side_effect=cli.KeygenError("echo")),
+        )
+        with pytest.raises(cli.KeygenError, match="echo"):
+            kg.authenticate_piv()
+        kg.session.verify_pin.assert_not_called()
 
 
 class TestGetDevice:

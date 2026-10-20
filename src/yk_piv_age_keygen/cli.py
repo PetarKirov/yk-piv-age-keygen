@@ -12,9 +12,11 @@
 import argparse
 import datetime
 import enum
+import getpass
 import hashlib
 import logging
 import sys
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -172,6 +174,23 @@ def format_sw(sw: int) -> str:
 
 class KeygenError(Exception):
     """Base exception raised in most cases."""
+
+
+def prompt_secret(text: str) -> str:
+    """Prompt for a secret, refusing to read it if echo can't be disabled."""
+    # getpass falls back to reading with echo on (and only warns) if it can't
+    # control the terminal, which would expose the secret on screen and in
+    # terminal logs. The warning is issued before reading, so fail there.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        try:
+            return click.prompt(text, hide_input=True)
+        except getpass.GetPassWarning as e:
+            msg = (
+                "Can't disable echo on this terminal to read secrets securely,"
+                " use --pin-stdin/--mgmt-key-stdin instead."
+            )
+            raise KeygenError(msg) from e
 
 
 class KeygenDeviceSelectionError(KeygenError):
@@ -345,9 +364,8 @@ class Keygen:
             device = "YubiKey"
             if self.serial is not None:
                 device += f" with serial '{self.serial}'"
-            self.pin = click.prompt(
+            self.pin = prompt_secret(
                 f"Enter PIN for {device} (default: {YUBIKEY_DEFAULT_PIN})",
-                hide_input=True,
             )
         self.session.verify_pin(self.pin)
 
@@ -372,9 +390,8 @@ class Keygen:
                 mgmt_key_default = YUBIKEY_DEFAULT_MANAGEMENT_KEY.hex()
 
                 self.mgmt_key = bytes.fromhex(
-                    click.prompt(
+                    prompt_secret(
                         f"Enter management key (default: {mgmt_key_default})",
-                        hide_input=True,
                     ),
                 )
             except ValueError as e:
